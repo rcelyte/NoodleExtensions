@@ -108,12 +108,14 @@
     <Compile Include="Animation\Events\AssignPlayerToTrack.cs" />
     <Compile Include="Animation\Events\AssignTrackParent.cs" />
     <Compile Include="Animation\Events\EventHelper.cs" />
+    <Compile Include="Animation\Events\NoodleEventData.cs" />
     <Compile Include="Animation\ParentObject.cs" />
     <Compile Include="Animation\PlayerTrack.cs" />
     <Compile Include="Animation\PointDefinition.cs" />
     <Compile Include="Animation\PointDefinitionInterpolation.cs" />
     <Compile Include="FakeNoteRecount.cs" />
     <Compile Include="HarmonyPatches\BeatmapDataTransformHelper.cs" />
+    <Compile Include="HarmonyPatches\MultiplayerConnectedPlayerInstaller.cs" />
     <Compile Include="HarmonyPatches\GameplayCoreInstaller.cs" />
     <Compile Include="HarmonyPatches\BeatmapDataLoader.cs" />
     <Compile Include="HarmonyPatches\BeatmapObjectCallBackController.cs" />
@@ -138,6 +140,7 @@
     <Compile Include="HarmonyPatches\NoteFloorMovement.cs" />
     <Compile Include="HarmonyPatches\NoteJump.cs" />
     <Compile Include="HarmonyPatches\NotesInTimeRowProcessor.cs" />
+    <Compile Include="HarmonyPatches\PlayerTransforms.cs" />
     <Compile Include="HarmonyPatches\SceneTransition\MissionLevelScenesTransitionSetupDataSO.cs" />
     <Compile Include="HarmonyPatches\SceneTransition\SceneTransitionHelper.cs" />
     <Compile Include="HarmonyPatches\SceneTransition\MultiplayerLevelScenesTransitionSetupDataSO.cs" />
@@ -147,6 +150,7 @@
     <Compile Include="HarmonyPatches\SpawnRotationProcessor.cs" />
     <Compile Include="HarmonyPatches\ObstacleController.cs" />
     <Compile Include="HarmonyPatches\SceneTransition\StandardLevelScenesTransitionSetupDataSO.cs" />
+    <Compile Include="NoodleObjectData.cs" />
     <Compile Include="NoodlePatch.cs" />
     <Compile Include="NullableExtensions.cs" />
     <Compile Include="Plugin.cs" />
@@ -160,7 +164,6 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="NoodleExtensions.ruleset" />
-    <None Include="packages.config" />
     <None Include="Directory.Build.props" Condition="Exists('Directory.Build.props')" />
     <None Include="Directory.Build.targets" Condition="Exists('Directory.Build.targets')" />
     <None Include="NoodleExtensions.csproj.user" Condition="Exists('NoodleExtensions.csproj.user')" />
@@ -171,7 +174,7 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="BeatSaberModdingTools.Tasks">
-      <Version>1.2.3</Version>
+      <Version>1.3.2</Version>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>

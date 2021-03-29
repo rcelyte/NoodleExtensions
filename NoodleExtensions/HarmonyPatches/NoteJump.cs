@@ -4,7 +4,6 @@
     using System.Linq;
     using System.Reflection;
     using System.Reflection.Emit;
-    using CustomJSONData;
     using HarmonyLib;
     using NoodleExtensions.Animation;
     using UnityEngine;
@@ -17,9 +16,15 @@
         private static readonly MethodInfo _noteJumpTimeAdjust = SymbolExtensions.GetMethodInfo(() => NoteJumpTimeAdjust(0, 0));
         private static readonly FieldInfo _localPositionField = AccessTools.Field(typeof(NoteJump), "_localPosition");
         private static readonly MethodInfo _definiteNoteJump = SymbolExtensions.GetMethodInfo(() => DefiniteNoteJump(Vector3.zero, 0));
-        private static readonly MethodInfo _convertToLocalSpace = SymbolExtensions.GetMethodInfo(() => ConvertToLocalSpace(null));
         private static readonly FieldInfo _definitePositionField = AccessTools.Field(typeof(NoteJumpManualUpdate), "_definitePosition");
-        private static readonly MethodInfo _getHeadPos = AccessTools.PropertyGetter(typeof(PlayerTransforms), "headPos");
+        private static readonly MethodInfo _getTransform = typeof(Component).GetProperty("transform").GetGetMethod();
+        private static readonly MethodInfo _doNoteLook = SymbolExtensions.GetMethodInfo(() => DoNoteLook(0, Quaternion.identity, Quaternion.identity, Quaternion.identity, null, Quaternion.identity, null, null));
+        private static readonly FieldInfo _startRotationField = AccessTools.Field(typeof(NoteJump), "_startRotation");
+        private static readonly FieldInfo _middleRotationField = AccessTools.Field(typeof(NoteJump), "_middleRotation");
+        private static readonly FieldInfo _endRotationField = AccessTools.Field(typeof(NoteJump), "_endRotation");
+        private static readonly FieldInfo _playerTransformsField = AccessTools.Field(typeof(NoteJump), "_playerTransforms");
+        private static readonly FieldInfo _inverseWorldRotationField = AccessTools.Field(typeof(NoteJump), "_inverseWorldRotation");
+        private static readonly FieldInfo _rotatedObjectField = AccessTools.Field(typeof(NoteJump), "_rotatedObject");
 
         // This field is used by reflection
 #pragma warning disable CS0414 // The field is assigned but its value is never used
@@ -28,10 +33,17 @@
 
         internal static float NoteJumpTimeAdjust(float original, float jumpDuration)
         {
-            dynamic dynData = NoteControllerUpdate.CustomNoteData.customData;
-            Track track = Trees.at(dynData, "track");
-            float? time = AnimationHelper.TryGetProperty(track, NoodleExtensions.Plugin.TIME);
-            return time.HasValue ? time.Value * jumpDuration : original;
+            NoodleObjectData noodleData = NoteControllerUpdate.NoodleData;
+            if (noodleData != null)
+            {
+                float? time = (float?)AnimationHelper.TryGetPropertyAsObject(noodleData.Track, Plugin.TIME);
+                if (time.HasValue)
+                {
+                    return time.Value * jumpDuration;
+                }
+            }
+
+            return original;
         }
 
         private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
@@ -39,9 +51,8 @@
             List<CodeInstruction> instructionList = instructions.ToList();
             bool foundTime = false;
             bool foundFinalPosition = false;
-            bool foundHeadLocalPos = false;
-            bool foundTransformUp = false;
             bool foundZOffset = false;
+            bool foundLook = false;
             for (int i = 0; i < instructionList.Count; i++)
             {
                 if (!foundTime &&
@@ -65,26 +76,6 @@
                     instructionList.Insert(i + 7, new CodeInstruction(OpCodes.Stfld, _localPositionField));
                 }
 
-                if (!foundHeadLocalPos &&
-                    instructionList[i].opcode == OpCodes.Callvirt &&
-                  ((MethodInfo)instructionList[i].operand).Name == "get_headLocalPos")
-                {
-                    foundHeadLocalPos = true;
-                    instructionList[i].operand = _getHeadPos;
-                }
-
-                if (!foundTransformUp &&
-                    instructionList[i].opcode == OpCodes.Callvirt &&
-                  ((MethodInfo)instructionList[i].operand).Name == "get_up")
-                {
-                    foundTransformUp = true;
-                    instructionList[i] = new CodeInstruction(OpCodes.Call, _convertToLocalSpace);
-                    instructionList.RemoveRange(i + 1, 8);
-                    instructionList.RemoveRange(i - 5, 3);
-                    instructionList.Insert(i - 5, new CodeInstruction(OpCodes.Ldloc_S, 5));
-                    instructionList.Insert(i - 5, new CodeInstruction(OpCodes.Ldloca_S, 6));
-                }
-
                 // is there a better way of checking labels?
                 if (!foundZOffset &&
                     instructionList[i].operand is Label &&
@@ -95,6 +86,41 @@
                     // Add addition check to our quirky little variable to skip end position offset when we are using definitePosition
                     instructionList.Insert(i + 1, new CodeInstruction(OpCodes.Ldsfld, _definitePositionField));
                     instructionList.Insert(i + 2, new CodeInstruction(OpCodes.Brtrue_S, instructionList[i].operand));
+                }
+
+                // Override all the rotation stuff
+                if (!foundLook &&
+                    instructionList[i].opcode == OpCodes.Bge_Un &&
+                    instructionList[i].operand.GetHashCode() == 6)
+                {
+                    Label label = (Label)instructionList[i].operand;
+                    int endIndex = instructionList.FindIndex(n => n.labels.Contains(label));
+
+                    foundLook = true;
+
+                    instructionList.RemoveRange(i + 1, endIndex - i - 1);
+
+                    // This is where the fun begins
+                    CodeInstruction[] codeInstructions = new CodeInstruction[]
+                    {
+                        new CodeInstruction(OpCodes.Ldloc_1),
+                        new CodeInstruction(OpCodes.Ldarg_0),
+                        new CodeInstruction(OpCodes.Ldfld, _startRotationField),
+                        new CodeInstruction(OpCodes.Ldarg_0),
+                        new CodeInstruction(OpCodes.Ldfld, _middleRotationField),
+                        new CodeInstruction(OpCodes.Ldarg_0),
+                        new CodeInstruction(OpCodes.Ldfld, _endRotationField),
+                        new CodeInstruction(OpCodes.Ldarg_0),
+                        new CodeInstruction(OpCodes.Ldfld, _playerTransformsField),
+                        new CodeInstruction(OpCodes.Ldarg_0),
+                        new CodeInstruction(OpCodes.Ldfld, _inverseWorldRotationField),
+                        new CodeInstruction(OpCodes.Ldarg_0),
+                        new CodeInstruction(OpCodes.Ldfld, _rotatedObjectField),
+                        new CodeInstruction(OpCodes.Ldarg_0),
+                        new CodeInstruction(OpCodes.Call, _getTransform),
+                        new CodeInstruction(OpCodes.Call, _doNoteLook),
+                    };
+                    instructionList.InsertRange(i + 1, codeInstructions);
                 }
             }
 
@@ -108,14 +134,14 @@
                 NoodleLogger.Log("Failed to find stind.r4!", IPA.Logging.Logger.Level.Error);
             }
 
-            if (!foundTransformUp)
-            {
-                NoodleLogger.Log("Failed to find call to get_up!", IPA.Logging.Logger.Level.Error);
-            }
-
             if (!foundZOffset)
             {
                 NoodleLogger.Log("Failed to find brfalse.s to Label21!", IPA.Logging.Logger.Level.Error);
+            }
+
+            if (!foundLook)
+            {
+                NoodleLogger.Log("Failed to find bge.un to Label6!", IPA.Logging.Logger.Level.Error);
             }
 
             return instructionList.AsEnumerable();
@@ -123,28 +149,50 @@
 
         private static Vector3 DefiniteNoteJump(Vector3 original, float time)
         {
-            dynamic dynData = NoteControllerUpdate.CustomNoteData.customData;
-            dynamic animationObject = Trees.at(dynData, "_animation");
-            Track track = Trees.at(dynData, "track");
-            AnimationHelper.GetDefinitePositionOffset(animationObject, track, time, out Vector3? position);
-            if (position.HasValue)
+            NoodleObjectData noodleData = NoteControllerUpdate.NoodleData;
+            if (noodleData != null)
             {
-                Vector3 noteOffset = Trees.at(dynData, "noteOffset");
-                _definitePosition = true;
-                return position.Value + noteOffset;
+                AnimationHelper.GetDefinitePositionOffset(noodleData.AnimationObject, noodleData.Track, time, out Vector3? position);
+                if (position.HasValue)
+                {
+                    Vector3 noteOffset = noodleData.NoteOffset;
+                    _definitePosition = true;
+                    return position.Value + noteOffset;
+                }
+            }
+
+            _definitePosition = false;
+            return original;
+        }
+
+        private static void DoNoteLook(
+            float num2,
+            Quaternion startRotation,
+            Quaternion middleRotation,
+            Quaternion endRotation,
+            PlayerTransforms playerTransforms,
+            Quaternion inverseWorldRotation,
+            Transform rotatedObject,
+            Transform baseTransform)
+        {
+            Quaternion a;
+            if (num2 < 0.125f)
+            {
+                a = Quaternion.Slerp(baseTransform.rotation * startRotation, baseTransform.rotation * middleRotation, Mathf.Sin(num2 * Mathf.PI * 4f));
             }
             else
             {
-                _definitePosition = false;
-                return original;
+                a = Quaternion.Slerp(baseTransform.rotation * middleRotation, baseTransform.rotation * endRotation, Mathf.Sin((num2 - 0.125f) * Mathf.PI * 2f));
             }
-        }
 
-        // These methods are necessary in order to rotate the parent transform without screwing with the rotateObject's up
-        // (Beat games kinda does this but they do it very pepega so i override)
-        private static Vector3 ConvertToLocalSpace(Transform rotatedObject)
-        {
-            return rotatedObject.parent.InverseTransformDirection(rotatedObject.up);
+            Vector3 vector = playerTransforms.headWorldPos;
+            vector.y = Mathf.Lerp(vector.y, baseTransform.position.y, 0.8f);
+            vector = inverseWorldRotation * vector;
+            Vector3 normalized = (baseTransform.position - vector).normalized;
+            Quaternion b = default;
+            Vector3 point = rotatedObject.up;
+            b.SetLookRotation(normalized, inverseWorldRotation * point);
+            rotatedObject.rotation = Quaternion.Lerp(a, b, num2 * 2f);
         }
     }
 }

@@ -1,14 +1,17 @@
 ﻿namespace NoodleExtensions.HarmonyPatches
 {
-    using HarmonyLib;
-
-    [HarmonyPatch(typeof(NoteCutScoreSpawner))]
-    [HarmonyPatch("HandleNoteWasCut")]
+    [NoodlePatch(typeof(NoteCutScoreSpawner))]
+    [NoodlePatch("HandleNoteWasCut")]
     internal static class NoteCutScoreSpawnerHandleNoteWasCut
     {
         private static bool Prefix(NoteController noteController)
         {
-            return FakeNoteHelper.GetFakeNote(noteController);
+            if (!(noteController is MultiplayerConnectedPlayerNoteController))
+            {
+                return FakeNoteHelper.GetFakeNote(noteController);
+            }
+
+            return true;
         }
     }
 }

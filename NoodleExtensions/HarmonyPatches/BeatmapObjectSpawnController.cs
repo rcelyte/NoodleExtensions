@@ -6,11 +6,17 @@
     {
         internal static BeatmapObjectSpawnController BeatmapObjectSpawnController { get; private set; }
 
-#pragma warning disable SA1313 // Parameter names should begin with lower-case letter
-        private static void Postfix(BeatmapObjectSpawnController __instance)
-#pragma warning restore SA1313 // Parameter names should begin with lower-case letter
+        internal static BasicBeatmapObjectManager BeatmapObjectManager { get; private set; }
+
+        private static void Postfix(BeatmapObjectSpawnController __instance, IBeatmapObjectSpawner ____beatmapObjectSpawner, BeatmapObjectSpawnMovementData ____beatmapObjectSpawnMovementData)
         {
             BeatmapObjectSpawnController = __instance;
+
+            if (____beatmapObjectSpawner is BasicBeatmapObjectManager basicBeatmapObjectManager)
+            {
+                BeatmapObjectManager = basicBeatmapObjectManager;
+                SpawnDataHelper.InitBeatmapObjectSpawnController(____beatmapObjectSpawnMovementData);
+            }
         }
     }
 }

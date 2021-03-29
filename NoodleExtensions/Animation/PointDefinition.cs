@@ -110,7 +110,17 @@
 
             SearchIndex(time, PropertyType.Vector3, out int l, out int r);
 
-            float normalTime = (time - _points[l].Point.w) / (_points[r].Point.w - _points[l].Point.w);
+            float normalTime;
+            float divisor = _points[r].Point.w - _points[l].Point.w;
+            if (divisor != 0)
+            {
+                normalTime = (time - _points[l].Point.w) / divisor;
+            }
+            else
+            {
+                normalTime = 0;
+            }
+
             if (_points[r].Spline == Splines.splineCatmullRom)
             {
                 return SmoothVectorLerp(_points, l, r, normalTime);
@@ -157,7 +167,17 @@
 
             SearchIndex(time, PropertyType.Quaternion, out int l, out int r);
 
-            float normalTime = (time - _points[l].Point.w) / (_points[r].Point.w - _points[l].Point.w);
+            float normalTime;
+            float divisor = _points[r].Point.w - _points[l].Point.w;
+            if (divisor != 0)
+            {
+                normalTime = (time - _points[l].Point.w) / divisor;
+            }
+            else
+            {
+                normalTime = 0;
+            }
+
             Quaternion[] bp = new Quaternion[r-l+1];
             float[] bt = new float[r-l+1];
             int count = 0;
@@ -198,7 +218,17 @@
 
             SearchIndex(time, PropertyType.Linear, out int l, out int r);
 
-            float normalTime = (time - _points[l].LinearPoint.y) / (_points[r].LinearPoint.y - _points[l].LinearPoint.y);
+            float normalTime;
+            float divisor = _points[r].LinearPoint.y - _points[l].LinearPoint.y;
+            if (divisor != 0)
+            {
+                normalTime = (time - _points[l].LinearPoint.y) / divisor;
+            }
+            else
+            {
+                normalTime = 0;
+            }
+
             float[] bp = new float[r-l+1];
             float[] bt = new float[r-l+1];
             int count = 0;
@@ -238,7 +268,17 @@
 
             SearchIndex(time, PropertyType.Vector4, out int l, out int r);
 
-            float normalTime = (time - _points[l].Vector4Point.v) / (_points[r].Vector4Point.v - _points[l].Vector4Point.v);
+            float normalTime;
+            float divisor = _points[r].Vector4Point.v - _points[l].Vector4Point.v;
+            if (divisor != 0)
+            {
+                normalTime = (time - _points[l].Vector4Point.v) / divisor;
+            }
+            else
+            {
+                normalTime = 0;
+            }
+
             Vector4[] bp = new Vector4[r-l+1];
             float[] bt = new float[r-l+1];
             int count = 0;

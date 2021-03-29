@@ -13,9 +13,7 @@
     [HarmonyPatch("MirrorLineIndex")]
     internal static class ObstacleDataMirrorLineIndex
     {
-#pragma warning disable SA1313 // Parameter names should begin with lower-case letter
-        private static void Postfix(ObstacleData __instance)
-#pragma warning restore SA1313 // Parameter names should begin with lower-case letter
+        private static void Prefix(ObstacleData __instance) // prefix because we need to know the lineIndex before it gets mirrored
         {
             if (__instance is CustomObstacleData customData)
             {
@@ -34,6 +32,11 @@
                 if (startX.HasValue)
                 {
                     dictdata[POSITION] = new List<object>() { (startX.Value + width) * -1, position.ElementAtOrDefault(1) };
+                }
+                else if (scaleX.HasValue)
+                {
+                    float lineIndex = __instance.lineIndex - 2;
+                    dictdata[POSITION] = new List<object>() { (lineIndex + width) * -1, position?.ElementAtOrDefault(1) ?? 0 };
                 }
 
                 if (localrot != null)

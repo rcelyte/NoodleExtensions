@@ -1,17 +1,15 @@
 ﻿namespace NoodleExtensions.HarmonyPatches
 {
-    using System;
     using System.Collections.Generic;
     using System.Linq;
     using System.Reflection;
     using System.Reflection.Emit;
-    using CustomJSONData;
-    using CustomJSONData.CustomBeatmap;
     using HarmonyLib;
     using IPA.Utilities;
     using NoodleExtensions.Animation;
     using UnityEngine;
     using static NoodleExtensions.HarmonyPatches.SpawnDataHelper.BeatmapObjectSpawnMovementDataVariables;
+    using static NoodleExtensions.NoodleObjectDataManager;
     using static NoodleExtensions.Plugin;
 
     [NoodlePatch(typeof(ObstacleController))]
@@ -84,58 +82,57 @@
             return instructionList.AsEnumerable();
         }
 
-#pragma warning disable SA1313 // Parameter names should begin with lower-case letter
         private static void Postfix(ObstacleController __instance, Quaternion ____worldRotation, ObstacleData obstacleData, Vector3 ____startPos, Vector3 ____midPos, Vector3 ____endPos, ref Bounds ____bounds)
-#pragma warning restore SA1313 // Parameter names should begin with lower-case letter
         {
-            if (obstacleData is CustomObstacleData customData)
+            if (__instance is MultiplayerConnectedPlayerObstacleController)
             {
-                dynamic dynData = customData.customData;
-                IEnumerable<float> localrot = ((List<object>)Trees.at(dynData, LOCALROTATION))?.Select(n => Convert.ToSingle(n));
+                return;
+            }
 
-                Transform transform = __instance.transform;
+            NoodleObstacleData noodleData = (NoodleObstacleData)NoodleObjectDatas[obstacleData];
 
-                Quaternion localRotation = _quaternionIdentity;
-                if (localrot != null)
+            Quaternion? localRotationQuaternion = noodleData.LocalRotationQuaternion;
+
+            Transform transform = __instance.transform;
+
+            Quaternion localRotation = _quaternionIdentity;
+            if (localRotationQuaternion.HasValue)
+            {
+                localRotation = localRotationQuaternion.Value;
+                transform.localRotation = ____worldRotation * localRotation;
+            }
+
+            transform.localScale = Vector3.one; // This is a fix for animation due to obstacles being recycled
+
+            Track track = noodleData.Track;
+            if (track != null && ParentObject.Controller != null)
+            {
+                ParentObject parentObject = ParentObject.Controller.GetParentObjectTrack(track);
+                if (parentObject != null)
                 {
-                    localRotation = Quaternion.Euler(localrot.ElementAt(0), localrot.ElementAt(1), localrot.ElementAt(2));
-                    transform.localRotation = ____worldRotation * localRotation;
-                }
-
-                transform.localScale = Vector3.one; // This is a fix for animation due to obstacles being recycled
-
-                Track track = AnimationHelper.GetTrack(dynData);
-                if (track != null && ParentObject.Controller != null)
-                {
-                    ParentObject parentObject = ParentObject.Controller.GetParentObjectTrack(track);
-                    if (parentObject != null)
-                    {
-                        parentObject.ParentToObject(transform);
-                    }
-                    else
-                    {
-                        ParentObject.ResetTransformParent(transform);
-                    }
+                    parentObject.ParentToObject(transform);
                 }
                 else
                 {
                     ParentObject.ResetTransformParent(transform);
                 }
-
-                bool? cuttable = Trees.at(dynData, CUTTABLE);
-                if (cuttable.HasValue && !cuttable.Value)
-                {
-                    ____bounds.size = _vectorZero;
-                }
-
-                dynData.startPos = ____startPos;
-                dynData.midPos = ____midPos;
-                dynData.endPos = ____endPos;
-                dynData.localRotation = localRotation;
-                dynData.boundsSize = ____bounds.size;
+            }
+            else
+            {
+                ParentObject.ResetTransformParent(transform);
             }
 
-            __instance.Update();
+            bool? cuttable = noodleData.Cuttable;
+            if (cuttable.HasValue && !cuttable.Value)
+            {
+                ____bounds.size = _vectorZero;
+            }
+
+            noodleData.StartPos = ____startPos;
+            noodleData.MidPos = ____midPos;
+            noodleData.EndPos = ____endPos;
+            noodleData.LocalRotation = localRotation;
+            noodleData.BoundsSize = ____bounds.size;
         }
 
         private static Quaternion InvertQuaternion(Quaternion quaternion)
@@ -146,25 +143,18 @@
         private static Quaternion GetWorldRotation(ObstacleData obstacleData, float @default)
         {
             Quaternion worldRotation = Quaternion.Euler(0, @default, 0);
-            if (obstacleData is CustomObstacleData customData)
-            {
-                dynamic dynData = customData.customData;
-                dynamic rotation = Trees.at(dynData, ROTATION);
 
-                if (rotation != null)
+            if (NoodleObjectDatas.TryGetValue(obstacleData, out NoodleObjectData noodleObjectData))
+            {
+                NoodleObstacleData noodleData = (NoodleObstacleData)noodleObjectData;
+
+                Quaternion? worldRotationQuaternion = noodleData.WorldRotationQuaternion;
+                if (worldRotationQuaternion.HasValue)
                 {
-                    if (rotation is List<object> list)
-                    {
-                        IEnumerable<float> rot = list.Select(n => Convert.ToSingle(n));
-                        worldRotation = Quaternion.Euler(rot.ElementAt(0), rot.ElementAt(1), rot.ElementAt(2));
-                    }
-                    else
-                    {
-                        worldRotation = Quaternion.Euler(0, (float)rotation, 0);
-                    }
+                    worldRotation = worldRotationQuaternion.Value;
                 }
 
-                dynData.worldRotation = worldRotation;
+                noodleData.WorldRotation = worldRotation;
             }
 
             return worldRotation;
@@ -172,11 +162,10 @@
 
         private static float GetCustomWidth(float @default, ObstacleData obstacleData)
         {
-            if (obstacleData is CustomObstacleData customData)
+            if (NoodleObjectDatas.TryGetValue(obstacleData, out NoodleObjectData noodleObjectData))
             {
-                dynamic dynData = customData.customData;
-                IEnumerable<float?> scale = ((List<object>)Trees.at(dynData, SCALE))?.Select(n => n.ToNullableFloat());
-                float? width = scale?.ElementAtOrDefault(0);
+                NoodleObstacleData noodleData = (NoodleObstacleData)noodleObjectData;
+                float? width = noodleData.Width;
                 if (width.HasValue)
                 {
                     return width.Value;
@@ -188,11 +177,10 @@
 
         private static float GetCustomLength(float @default, ObstacleData obstacleData)
         {
-            if (obstacleData is CustomObstacleData customData)
+            if (NoodleObjectDatas.TryGetValue(obstacleData, out NoodleObjectData noodleObjectData))
             {
-                dynamic dynData = customData.customData;
-                IEnumerable<float?> scale = ((List<object>)Trees.at(dynData, SCALE))?.Select(n => n.ToNullableFloat());
-                float? length = scale?.ElementAtOrDefault(2);
+                NoodleObstacleData noodleData = (NoodleObstacleData)noodleObjectData;
+                float? length = noodleData.Length;
                 if (length.HasValue)
                 {
                     return length.Value * NoteLinesDistance;
@@ -244,11 +232,9 @@
 
         private static float ObstacleTimeAdjust(float original, ObstacleData obstacleData, float move1Duration, float finishMovementTime)
         {
-            if (original > move1Duration)
+            if (original > move1Duration && NoodleObjectDatas.TryGetValue(obstacleData, out NoodleObjectData noodleData))
             {
-                dynamic dynData = ((CustomObstacleData)obstacleData).customData;
-                Track track = Trees.at(dynData, "track");
-                float? time = AnimationHelper.TryGetProperty(track, TIME);
+                float? time = (float?)AnimationHelper.TryGetPropertyAsObject(noodleData.Track, TIME);
                 if (time.HasValue)
                 {
                     return (time.Value * (finishMovementTime - move1Duration)) + move1Duration;
@@ -258,7 +244,6 @@
             return original;
         }
 
-#pragma warning disable SA1313 // Parameter names should begin with lower-case letter
         private static void Prefix(
             ObstacleController __instance,
             ObstacleData ____obstacleData,
@@ -273,98 +258,99 @@
             ref Quaternion ____worldRotation,
             ref Quaternion ____inverseWorldRotation,
             ref Bounds ____bounds)
-#pragma warning restore SA1313 // Parameter names should begin with lower-case letter
         {
-            if (____obstacleData is CustomObstacleData customData)
+            if (__instance is MultiplayerConnectedPlayerObstacleController)
             {
-                dynamic dynData = customData.customData;
+                return;
+            }
 
-                Track track = Trees.at(dynData, "track");
-                dynamic animationObject = Trees.at(dynData, "_animation");
-                if (track != null || animationObject != null)
+            NoodleObstacleData noodleData = (NoodleObstacleData)NoodleObjectDatas[____obstacleData];
+
+            Track track = noodleData.Track;
+            NoodleObjectData.AnimationObjectData animationObject = noodleData.AnimationObject;
+            if (track != null || animationObject != null)
+            {
+                // idk i just copied base game time
+                float elapsedTime = ____audioTimeSyncController.songTime - ____startTimeOffset;
+                float normalTime = (elapsedTime - ____move1Duration) / (____move2Duration + ____obstacleDuration);
+
+                AnimationHelper.GetObjectOffset(animationObject, track, normalTime, out Vector3? positionOffset, out Quaternion? rotationOffset, out Vector3? scaleOffset, out Quaternion? localRotationOffset, out float? dissolve, out float? _, out float? cuttable);
+
+                if (positionOffset.HasValue)
                 {
-                    // idk i just copied base game time
-                    float elapsedTime = ____audioTimeSyncController.songTime - ____startTimeOffset;
-                    float normalTime = (elapsedTime - ____move1Duration) / (____move2Duration + ____obstacleDuration);
+                    Vector3 startPos = noodleData.StartPos;
+                    Vector3 midPos = noodleData.MidPos;
+                    Vector3 endPos = noodleData.EndPos;
 
-                    AnimationHelper.GetObjectOffset(animationObject, track, normalTime, out Vector3? positionOffset, out Quaternion? rotationOffset, out Vector3? scaleOffset, out Quaternion? localRotationOffset, out float? dissolve, out float? _, out float? cuttable);
+                    Vector3 offset = positionOffset.Value;
+                    ____startPos = startPos + offset;
+                    ____midPos = midPos + offset;
+                    ____endPos = endPos + offset;
+                }
 
-                    if (positionOffset.HasValue)
+                Transform transform = __instance.transform;
+
+                if (rotationOffset.HasValue || localRotationOffset.HasValue)
+                {
+                    Quaternion worldRotation = noodleData.WorldRotation;
+                    Quaternion localRotation = noodleData.LocalRotation;
+
+                    Quaternion worldRotationQuatnerion = worldRotation;
+                    if (rotationOffset.HasValue)
                     {
-                        Vector3 startPos = Trees.at(dynData, "startPos");
-                        Vector3 midPos = Trees.at(dynData, "midPos");
-                        Vector3 endPos = Trees.at(dynData, "endPos");
-
-                        Vector3 offset = positionOffset.Value;
-                        ____startPos = startPos + offset;
-                        ____midPos = midPos + offset;
-                        ____endPos = endPos + offset;
+                        worldRotationQuatnerion *= rotationOffset.Value;
+                        Quaternion inverseWorldRotation = Quaternion.Euler(-worldRotationQuatnerion.eulerAngles);
+                        ____worldRotation = worldRotationQuatnerion;
+                        ____inverseWorldRotation = inverseWorldRotation;
                     }
 
-                    Transform transform = __instance.transform;
+                    worldRotationQuatnerion *= localRotation;
 
-                    if (rotationOffset.HasValue || localRotationOffset.HasValue)
+                    if (localRotationOffset.HasValue)
                     {
-                        Quaternion worldRotation = Trees.at(dynData, "worldRotation");
-                        Quaternion localRotation = Trees.at(dynData, "localRotation");
-
-                        Quaternion worldRotationQuatnerion = worldRotation;
-                        if (rotationOffset.HasValue)
-                        {
-                            worldRotationQuatnerion *= rotationOffset.Value;
-                            Quaternion inverseWorldRotation = Quaternion.Euler(-worldRotationQuatnerion.eulerAngles);
-                            ____worldRotation = worldRotationQuatnerion;
-                            ____inverseWorldRotation = inverseWorldRotation;
-                        }
-
-                        worldRotationQuatnerion *= localRotation;
-
-                        if (localRotationOffset.HasValue)
-                        {
-                            worldRotationQuatnerion *= localRotationOffset.Value;
-                        }
-
-                        transform.localRotation = worldRotationQuatnerion;
+                        worldRotationQuatnerion *= localRotationOffset.Value;
                     }
 
-                    bool cuttableEnabled = true;
-                    if (cuttable.HasValue)
+                    transform.localRotation = worldRotationQuatnerion;
+                }
+
+                bool cuttableEnabled = true;
+                if (cuttable.HasValue)
+                {
+                    cuttableEnabled = cuttable.Value >= 1;
+                    if (cuttableEnabled)
                     {
-                        cuttableEnabled = cuttable.Value >= 1;
-                        if (cuttableEnabled)
+                        if (____bounds.size != _vectorZero)
                         {
-                            if (____bounds.size != _vectorZero)
-                            {
-                                ____bounds.size = _vectorZero;
-                            }
-                        }
-                        else
-                        {
-                            Vector3 boundsSize = Trees.at(dynData, "boundsSize");
-                            if (____bounds.size != boundsSize)
-                            {
-                                ____bounds.size = boundsSize;
-                            }
+                            ____bounds.size = _vectorZero;
                         }
                     }
-
-                    if (scaleOffset.HasValue)
+                    else
                     {
-                        transform.localScale = scaleOffset.Value;
-                    }
-
-                    if (dissolve.HasValue)
-                    {
-                        CutoutAnimateEffect cutoutAnimateEffect = Trees.at(dynData, "cutoutAnimateEffect");
-                        if (cutoutAnimateEffect == null)
+                        Vector3 boundsSize = noodleData.BoundsSize;
+                        if (____bounds.size != boundsSize)
                         {
-                            ObstacleDissolve obstacleDissolve = __instance.gameObject.GetComponent<ObstacleDissolve>();
-                            cutoutAnimateEffect = _obstacleCutoutAnimateEffectAccessor(ref obstacleDissolve);
-                            dynData.cutoutAnimateEffect = cutoutAnimateEffect;
+                            ____bounds.size = boundsSize;
                         }
-
-                        cutoutAnimateEffect.SetCutout(1 - dissolve.Value);
                     }
+                }
+
+                if (scaleOffset.HasValue)
+                {
+                    transform.localScale = scaleOffset.Value;
+                }
+
+                if (dissolve.HasValue)
+                {
+                    CutoutAnimateEffect cutoutAnimateEffect = noodleData.CutoutAnimateEffect;
+                    if (cutoutAnimateEffect == null)
+                    {
+                        ObstacleDissolve obstacleDissolve = __instance.gameObject.GetComponent<ObstacleDissolve>();
+                        cutoutAnimateEffect = _obstacleCutoutAnimateEffectAccessor(ref obstacleDissolve);
+                        noodleData.CutoutAnimateEffect = cutoutAnimateEffect;
+                    }
+
+                    cutoutAnimateEffect.SetCutout(1 - dissolve.Value);
                 }
             }
         }
@@ -374,7 +360,6 @@
     [NoodlePatch("GetPosForTime")]
     internal static class ObstacleControllerGetPosForTime
     {
-#pragma warning disable SA1313 // Parameter names should begin with lower-case letter
         private static bool Prefix(
             ref Vector3 __result,
             ObstacleData ____obstacleData,
@@ -384,34 +369,33 @@
             float ____move2Duration,
             float ____obstacleDuration,
             float time)
-#pragma warning restore SA1313 // Parameter names should begin with lower-case letter
         {
-            if (____obstacleData is CustomObstacleData customObstacleData)
+            if (!NoodleObjectDatas.TryGetValue(____obstacleData, out NoodleObjectData noodleObjectData))
             {
-                dynamic dynData = customObstacleData.customData;
-                dynamic animationObject = Trees.at(dynData, "_animation");
-                Track track = Trees.at(dynData, "track");
+                return true;
+            }
 
-                float jumpTime = Mathf.Clamp((time - ____move1Duration) / (____move2Duration + ____obstacleDuration), 0, 1);
-                AnimationHelper.GetDefinitePositionOffset(animationObject, track, jumpTime, out Vector3? position);
+            NoodleObstacleData noodleData = (NoodleObstacleData)noodleObjectData;
 
-                if (position.HasValue)
+            float jumpTime = Mathf.Clamp((time - ____move1Duration) / (____move2Duration + ____obstacleDuration), 0, 1);
+            AnimationHelper.GetDefinitePositionOffset(noodleData.AnimationObject, noodleData.Track, jumpTime, out Vector3? position);
+
+            if (position.HasValue)
+            {
+                Vector3 noteOffset = noodleData.NoteOffset;
+                Vector3 definitePosition = position.Value + noteOffset;
+                definitePosition.x += noodleData.XOffset;
+                if (time < ____move1Duration)
                 {
-                    Vector3 noteOffset = Trees.at(dynData, "noteOffset");
-                    Vector3 definitePosition = position.Value + noteOffset;
-                    definitePosition.x += Trees.at(dynData, "xOffset");
-                    if (time < ____move1Duration)
-                    {
-                        __result = Vector3.LerpUnclamped(____startPos, ____midPos, time / ____move1Duration);
-                        __result += definitePosition - ____midPos;
-                    }
-                    else
-                    {
-                        __result = definitePosition;
-                    }
-
-                    return false;
+                    __result = Vector3.LerpUnclamped(____startPos, ____midPos, time / ____move1Duration);
+                    __result += definitePosition - ____midPos;
                 }
+                else
+                {
+                    __result = definitePosition;
+                }
+
+                return false;
             }
 
             return true;
